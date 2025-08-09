@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Simulador de Escaparates</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif; margin: 20px; background: #f7f7f7; color: #222;
+    }
+    header, footer { text-align: center; margin-bottom: 16px; }
+    #toolbox { margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+    .tool {
+      background: #3498db; color: #fff; border: none; border-radius: 5px; cursor: pointer;
+      padding: 5px; display: flex; flex-direction: column; align-items: center; width: 70px; height: 70px;
+    }
+    .tool img { width: 40px; height: 40px; margin-bottom: 3px; }
+    #canvas {
+      width: 100%; height: 400px; background: #fff; border: 2px dashed #bbb;
+      position: relative; margin-bottom: 20px; overflow: auto;
+      touch-action: none;
+    }
+    .element {
+      position: absolute;
+      cursor: grab;
+      user-select: none;
+      min-width: 40px; min-height: 40px;
+      z-index: 1;
+      transition: box-shadow 0.1s;
+    }
+    .element.dragging { z-index: 10; box-shadow: 0 0 12px #888; }
+    .delete-btn {
+      position: absolute; top: -12px; right: -12px;
+      width: 24px; height: 24px; background: #e74c3c; color: #fff;
+      border: none; border-radius: 50%; font-weight: bold; font-size: 16px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 20;
+      box-shadow: 0 1px 4px #999;
+    }
+    .element img { width: 60px; height: 60px; pointer-events: none; }
+    #score-board { margin-bottom: 8px; }
+    #actions button {
+      margin-right: 7px; margin-bottom: 2px; padding: 8px 14px; background: #27ae60; color: #fff;
+      border: none; border-radius: 5px; cursor: pointer;
+    }
+    #reset { background: #e74c3c; }
+    #export { background: #8e44ad; }
+    #comments-section {
+      margin-top: 16px; background: #fff; border: 1px solid #ddd; padding: 12px; border-radius: 6px;
+    }
+    #comments-list { list-style: none; padding-left: 0; }
+    #comments-list li {
+      background: #f0f0f0; margin-bottom: 5px; padding: 6px; border-radius: 4px;
+    }
+    input, select, button { font-size: 1rem; }
+    #share-link { margin-top: 10px; }
+    @media (max-width: 600px) {
+      #canvas { height: 200px; }
+      .tool { width: 50px; height: 50px; }
+      .tool img { width: 30px; height: 30px; }
+      .element img { width: 40px; height: 40px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 id="title">Simulador de Escaparates</h1>
+    <select id="lang-selector" aria-label="Seleccionar idioma">
+      <option value="es">Español</option>
+      <option value="en">English</option>
+    </select>
+  </header>
+  <main>
+    <section id="toolbox"></section>
+    <section>
+      <div id="canvas" aria-label="Lienzo de escaparate" tabindex="0"></div>
+      <div id="score-board">
+        <span id="score-label">Puntos:</span> <span id="score">0</span>
+        <span id="recommendation"></span>
+      </div>
+      <div id="actions">
+        <button id="generate">Generar Plano</button>
+        <button id="reset">Reiniciar</button>
+        <button id="save">Guardar Diseño</button>
+        <button id="load">Cargar Diseño</button>
+        <button id="export">Exportar Imagen</button>
+        <button id="share">Compartir</button>
+      </div>
+      <div id="share-link" style="display:none;">
+        <label for="link">Enlace para compartir:</label>
+        <input type="text" id="link" readonly>
+      </div>
+    </section>
+    <section id="comments-section">
+      <h2>Comentarios</h2>
+      <form id="comment-form" aria-label="Formulario de comentarios">
+        <input type="text" id="comment-input" placeholder="Escribe tu comentario..." required>
+        <button type="submit">Enviar</button>
+      </form>
+      <ul id="comments-list"></ul>
+    </section>
+  </main>
+  <footer>
+    <p id="author">Desarrollado por Doc. Beyker Salvatierra</p>
+    <blockquote id="motto">“Cada escaparate es una oportunidad para inspirar, comunicar y dejar huella. ¡Atrévete a crear el tuyo!”</blockquote>
+  </footer>
+  <script>
+    // Elementos visuales (puedes reemplazar los SVG/PNG por los tuyos si lo deseas)
+    const IMAGES = {
+      maniqui: 'https://cdn.jsdelivr.net/gh/elbeyker12-coder/escaparates-img@main/maniqui.svg',
+      base: 'https://cdn.jsdelivr.net/gh/elbeyker12-coder/escaparates-img@main/base.svg',
+      bolsa: 'https://cdn.jsdelivr.net/gh/elbeyker12-coder/escaparates-img@main/bolsa.svg',
+      caja: 'https://cdn.jsdelivr.net/gh/elbeyker12-coder/escaparates-img@main/caja.svg',
+      decoracion: 'https://cdn.jsdelivr.net/gh/elbeyker12-coder/escaparates-img@main/decoracion.svg',
+      planta: 'https://cdn.jsdelivr.net/gh/elbeyker12-coder/escaparates-img@main/planta.svg',
+      luz: 'https://cdn.jsdelivr.net/gh/elbeyker12-coder/escaparates-img@main/luz.svg',
+      cartel: 'https://cdn.jsdelivr.net/gh/elbeyker12-coder/escaparates-img@main/cartel.svg'
+    };
+
+    // Multilenguaje básico
+    const translations = {
+      es: {
+        title: 'Simulador de Escaparates',
+        toolbox: 'Herramientas',
+        generate: 'Generar Plano',
+        reset: 'Reiniciar',
+        save: 'Guardar Diseño',
+        load: 'Cargar Diseño',
+        export: 'Exportar Imagen',
+        share: 'Compartir',
+        score: 'Puntos:',
+        recommendation: 'Recomendación:',
+        comments: 'Comentarios',
+        author: 'Desarrollado por Doc. Beyker Salvatierra',
+        motto: '“Cada escaparate es una oportunidad para inspirar, comunicar y dejar huella. ¡Atrévete a crear el tuyo!”',
+        placeholder: 'Escribe tu comentario...',
+        send: 'Enviar',
+        share_label: 'Enlace para compartir:'
+      },
+      en: {
+        title: 'Window Display Simulator',
+        toolbox: 'Tools',
+        generate: 'Generate Plan',
+        reset: 'Reset',
+        save: 'Save Design',
+        load: 'Load Design',
+        export: 'Export Image',
+        share: 'Share',
+        score: 'Score:',
+        recommendation: 'Recommendation:',
+        comments: 'Comments',
+        author: 'Developed by Doc. Beyker Salvatierra',
+        motto: '"Every showcase is an opportunity to inspire, communicate and leave a mark. Dare to create your own!"',
+        placeholder: 'Write your comment...',
+        send: 'Send',
+        share_label: 'Shareable link:'
+      }
+    };
+
+    function setLang(lang) {
+      document.getElementById('title').textContent = translations[lang].title;
+      document.getElementById('generate').textContent = translations[lang].generate;
+      document.getElementById('reset').textContent = translations[lang].reset;
+      document.getElementById('save').textContent = translations[lang].save;
+      document.getElementById('load').textContent = translations[lang].load;
+      document.getElementById('export').textContent = translations[lang].export;
+      document.getElementById('share').textContent = translations[lang].share;
+      document.getElementById('score-label').textContent = translations[lang].score;
+      document.getElementById('comments-section').querySelector('h2').textContent = translations[lang].comments;
+      document.getElementById('author').textContent = translations[lang].author;
+      document.getElementById('motto').textContent = translations[lang].motto;
+      document.getElementById('comment-input').placeholder = translations[lang].placeholder;
+      document.getElementById('comment-form').querySelector('button').textContent = translations[lang].send;
+      document.querySelector('#share-link label').textContent = translations[lang].share_label;
+    }
+    document.getElementById('lang-selector').onchange = e => setLang(e.target.value);
+    setLang('es'); // Idioma por defecto
+
+    // Render toolbox
+    const toolbox = document.getElementById('toolbox');
+    toolbox.innerHTML = Object.entries(IMAGES).map(([type, src]) =>
+      `<button class="tool" data-type="${type}" title="${type}">
+        <img src="${src}" alt="${type}">
+        <span>${type.charAt(0).toUpperCase() + type.slice(1)}</span>
+      </button>`
+    ).join('');
+
+    // Funcionalidad principal
+    const canvas = document.getElementById('canvas');
+    const generateBtn = document.getElementById('generate');
+    const resetBtn = document.getElementById('reset');
+    const saveBtn = document.getElementById('save');
+    const loadBtn = document.getElementById('load');
+    const exportBtn = document.getElementById('export');
+    const shareBtn = document.getElementById('share');
+    const scoreSpan = document.getElementById('score');
+    const recommendationSpan = document.getElementById('recommendation');
+    let commentList = document.getElementById('comments-list');
+    let commentForm = document.getElementById('comment-form');
+    let commentInput = document.getElementById('comment-input');
+
+    // Crear elemento visual
+    function createElement(type, left = '10px', top = '10px') {
+      const el = document.createElement('div');
+      el.className = 'element';
+      el.setAttribute('data-type', type);
+      el.style.left = left;
+      el.style.top = top;
+      el.innerHTML = `
+        <img src="${IMAGES[type]}" alt="${type}">
+        <button class="delete-btn" aria-label="Eliminar" tabindex="0">&times;</button>
+      `;
+      // Eliminar al pulsar la X
+      el.querySelector('.delete-btn').onclick = e => {
+        e.stopPropagation();
+        el.remove();
+        updateScore();
+      };
+      // Drag & Drop para mouse y táctil
+      let dragging = false, offsetX, offsetY;
+      function startDrag(pageX, pageY) {
+        dragging = true;
+        el.classList.add('dragging');
+        offsetX = pageX - el.getBoundingClientRect().left;
+        offsetY = pageY - el.getBoundingClientRect().top;
+        document.body.style.userSelect = "none";
+      }
+      function moveDrag(pageX, pageY) {
+        if (!dragging) return;
+        let x = pageX - canvas.getBoundingClientRect().left - offsetX;
+        let y = pageY - canvas.getBoundingClientRect().top - offsetY;
+        el.style.left = Math.max(0, Math.min(x, canvas.clientWidth-60)) + "px";
+        el.style.top = Math.max(0, Math.min(y, canvas.clientHeight-60)) + "px";
+      }
+      function stopDrag() {
+        dragging = false;
+        el.classList.remove('dragging');
+        document.body.style.userSelect = "";
+        updateScore();
+      }
+      // Mouse
+      el.addEventListener('mousedown', function(e){
+        if(e.target.classList.contains('delete-btn')) return;
+        startDrag(e.pageX, e.pageY);
+        document.onmousemove = (ev)=>moveDrag(ev.pageX,ev.pageY);
+        document.onmouseup = stopDrag;
+      });
+      // Táctil
+      el.addEventListener('touchstart', function(e){
+        if(e.target.classList.contains('delete-btn')) return;
+        const t = e.touches[0];
+        startDrag(t.pageX, t.pageY);
+        document.ontouchmove = (ev)=>{
+          let t2 = ev.touches[0];
+          moveDrag(t2.pageX, t2.pageY);
+        };
+        document.ontouchend = stopDrag;
+      });
+      return el;
+    }
+
+    // Añadir elemento del toolbox
+    toolbox.addEventListener('click', e => {
+      if (e.target.closest('.tool')) {
+        const btn = e.target.closest('.tool');
+        const type = btn.dataset.type;
+        const el = createElement(type);
+        canvas.appendChild(el);
+        updateScore();
+      }
+    });
+
+    // Generar plano (listado)
+    generateBtn.onclick = function() {
+      let plano = '';
+      canvas.querySelectorAll('.element').forEach((el, i) => {
+        plano += `${i + 1}. ${el.getAttribute('data-type')} - posición (${el.style.left}, ${el.style.top})\n`;
+      });
+      alert('Plano de escaparate:\n' + plano);
+    };
+
+    // Reiniciar
+    resetBtn.onclick = function() {
+      canvas.innerHTML = '';
+      updateScore();
+    };
+
+    // Guardar diseño en localStorage
+    saveBtn.onclick = function() {
+      const elements = Array.from(canvas.querySelectorAll('.element')).map(el => ({
+        type: el.getAttribute('data-type'),
+        left: el.style.left,
+        top: el.style.top
+      }));
+      localStorage.setItem('escaparate-design', JSON.stringify(elements));
+      alert('Diseño guardado correctamente.');
+    };
+
+    // Cargar diseño desde localStorage
+    loadBtn.onclick = function() {
+      const elements = JSON.parse(localStorage.getItem('escaparate-design') || '[]');
+      canvas.innerHTML = '';
+      elements.forEach(data => {
+        const el = createElement(data.type, data.left, data.top);
+        canvas.appendChild(el);
+      });
+      updateScore();
+    };
+
+    // Compartir diseño por enlace
+    shareBtn.onclick = function() {
+      const elements = Array.from(canvas.querySelectorAll('.element')).map(el => ({
+        type: el.getAttribute('data-type'),
+        left: el.style.left,
+        top: el.style.top
+      }));
+      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(elements))));
+      const shareUrl = location.origin + location.pathname + '?design=' + encoded;
+      document.getElementById('share-link').style.display = 'block';
+      document.getElementById('link').value = shareUrl;
+    };
+
+    // Cargar diseño desde enlace
+    function loadSharedDesign() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const designEncoded = urlParams.get('design');
+      if (designEncoded) {
+        try {
+          const design = JSON.parse(decodeURIComponent(escape(atob(designEncoded))));
+          canvas.innerHTML = '';
+          design.forEach(data => {
+            const el = createElement(data.type, data.left, data.top);
+            canvas.appendChild(el);
+          });
+          updateScore();
+        } catch (e) {
+          alert('Enlace de diseño inválido.');
+        }
+      }
+    }
+    loadSharedDesign();
+
+    // Sistema de puntuación y recomendación simple
+    function updateScore() {
+      const elements = Array.from(canvas.querySelectorAll('.element'));
+      const types = elements.map(el => el.getAttribute('data-type'));
+      let score = elements.length * 10;
+      if (types.includes('maniqui') && types.includes('base') && types.includes('cartel')) {
+        score += 30;
+      }
+      scoreSpan.textContent = score;
+      if (score === 0) {
+        recommendationSpan.textContent = '';
+      } else if (score < 40) {
+        recommendationSpan.textContent = '¡Agrega más variedad!';
+      } else if (score < 80) {
+        recommendationSpan.textContent = '¡Buen trabajo!';
+      } else {
+        recommendationSpan.textContent = '¡Excelente composición!';
+      }
+    }
+
+    // Comentarios (local)
+    commentForm.onsubmit = function(e) {
+      e.preventDefault();
+      const text = commentInput.value.trim();
+      if (text) {
+        const li = document.createElement('li');
+        li.textContent = text;
+        commentList.appendChild(li);
+        commentInput.value = '';
+      }
+    };
+  </script>
+</body>
+</html>
